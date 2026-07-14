@@ -1,0 +1,10 @@
+.env
+sessions.json
+releases/
+__pycache__/
+*.pyc
+bot.log
+bot.log.*
+.claude/settings.local.json
+venv/
+.venv/
