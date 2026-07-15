@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 bot.log
 bot.log.*
+*.err
 .claude/settings.local.json
 venv/
 .venv/
