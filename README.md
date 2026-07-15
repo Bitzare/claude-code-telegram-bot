@@ -68,6 +68,35 @@ Una vez arrancado, desde Telegram (con un usuario de `ALLOWED_USER_IDS`):
 - `/cancel` aborta la ejecucion en curso (de Claude Code o del build).
 - `/model` muestra el modelo/effort actual de ese chat. `/model <modelo> [effort]` lo cambia (ej. `/model opus high`, `/model sonnet`). `/model reset` vuelve a los valores por defecto (`DEFAULT_MODEL`/`DEFAULT_EFFORT`). Por defecto el bot usa Sonnet con effort medio para no disparar el consumo de tokens; sube a `opus`/`high` solo cuando lo necesites.
 
+## Notificacion de salida (Stop hook) — que Claude Code te avise a ti por Telegram
+
+Lo de arriba es el flujo "entrante" (tu le hablas al bot desde Telegram). Tambien puedes montar el flujo contrario: que **cualquier sesion normal de Claude Code** (la del IDE, la terminal, etc. — no necesariamente lanzada por este bot) te mande un mensaje de Telegram cuando termina una tarea, usando el mismo `TELEGRAM_BOT_TOKEN` de este `.env`.
+
+Esto se hace con un **hook `Stop`** en la configuracion de Claude Code (`~/.claude/settings.json` para que aplique a todas las sesiones, o `.claude/settings.json` de un proyecto concreto para limitarlo a ese repo):
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set -a; . \"/ruta/absoluta/a/RushuuDevelopmentsAPI/.env\" 2>/dev/null; set +a; curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" --data-urlencode \"chat_id=TU_ID_DE_TELEGRAM\" --data-urlencode \"text=Claude Code finished a task in: $(pwd)\" >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Notas:
+- Cambia `/ruta/absoluta/a/RushuuDevelopmentsAPI/.env` por la ruta real donde tengas clonado este repo, y `TU_ID_DE_TELEGRAM` por tu ID (el mismo que usarias en `ALLOWED_USER_IDS`).
+- El mensaje se manda en texto plano ASCII (sin emojis ni tildes) — en Windows con Git Bash, pasar caracteres UTF-8 especiales por la linea de comandos del hook puede llegar corrupto a la API de Telegram y Telegram lo rechaza (`400 Bad Request: strings must be encoded in UTF-8`).
+- Tras anadir o editar el hook en un `settings.json` que ya existia al arrancar la sesion, puede hacer falta abrir `/hooks` una vez (o reiniciar Claude Code) para que se recargue.
+- Este mecanismo es independiente del bot (`bot.py`) — no hace falta tenerlo corriendo para que el hook funcione, solo necesita el `TELEGRAM_BOT_TOKEN` del `.env`.
+
 ## Notas de seguridad
 
 - El bot filtra por `user.id` de Telegram, no por username (los usernames se pueden cambiar). Verifica el ID correcto con `@userinfobot`.
@@ -150,6 +179,35 @@ Once running, from Telegram (as a user in `ALLOWED_USER_IDS`):
 - `/build` compiles a Flutter release APK from `PROJECT_PATH` and gives you a download link (only useful if your project is Flutter; otherwise ignore this command).
 - `/cancel` aborts whatever is currently running (Claude Code or the build).
 - `/model` shows the current model/effort for that chat. `/model <model> [effort]` changes it (e.g. `/model opus high`, `/model sonnet`). `/model reset` restores the defaults (`DEFAULT_MODEL`/`DEFAULT_EFFORT`). The bot defaults to Sonnet at medium effort to keep token usage down — bump to `opus`/`high` only when you actually need it.
+
+## Outbound notification (Stop hook) — have Claude Code message you on Telegram
+
+Everything above is the "inbound" flow (you talk to the bot from Telegram). You can also set up the reverse flow: have **any regular Claude Code session** (IDE, terminal, etc. — not necessarily launched by this bot) send you a Telegram message when it finishes a task, reusing the same `TELEGRAM_BOT_TOKEN` from this `.env`.
+
+This is done with a **`Stop` hook** in Claude Code's config (`~/.claude/settings.json` to apply to every session, or a project's `.claude/settings.json` to scope it to just that repo):
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set -a; . \"/absolute/path/to/RushuuDevelopmentsAPI/.env\" 2>/dev/null; set +a; curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" --data-urlencode \"chat_id=YOUR_TELEGRAM_ID\" --data-urlencode \"text=Claude Code finished a task in: $(pwd)\" >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Notes:
+- Replace `/absolute/path/to/RushuuDevelopmentsAPI/.env` with wherever you actually cloned this repo, and `YOUR_TELEGRAM_ID` with your ID (same one you'd use in `ALLOWED_USER_IDS`).
+- The message is sent as plain ASCII (no emoji/accents) — on Windows with Git Bash, passing special UTF-8 characters through the hook's command line can arrive corrupted at the Telegram API, which then rejects it (`400 Bad Request: strings must be encoded in UTF-8`).
+- After adding/editing the hook in a `settings.json` that already existed when the session started, you may need to open `/hooks` once (or restart Claude Code) for it to reload.
+- This mechanism is independent of the bot (`bot.py`) — it doesn't need to be running for the hook to work, it only needs the `TELEGRAM_BOT_TOKEN` from `.env`.
 
 ## Security notes
 
