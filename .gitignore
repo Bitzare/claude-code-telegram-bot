@@ -6,6 +6,9 @@ __pycache__/
 *.pyc
 bot.log
 bot.log.*
+bot.launchd.log
+bot.launchd.err
+*.err
 .claude/settings.local.json
 venv/
 .venv/
