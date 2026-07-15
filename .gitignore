@@ -1,5 +1,6 @@
 .env
 sessions.json
+models.json
 releases/
 __pycache__/
 *.pyc

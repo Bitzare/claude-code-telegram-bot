@@ -33,6 +33,14 @@ RELEASES_DIR = Path(__file__).parent / "releases"
 RELEASES_DIR.mkdir(exist_ok=True)
 RELEASES_TO_KEEP = 5
 
+# Sonnet + effort medio por defecto: Opus consume muchisimos mas tokens y para
+# la mayoria de mensajes por Telegram no compensa. Cada chat puede cambiarlo
+# con /model (ver handle_model).
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "sonnet")
+DEFAULT_EFFORT = os.environ.get("DEFAULT_EFFORT", "medium")
+VALID_EFFORTS = {"low", "medium", "high", "xhigh", "max"}
+MODELS_FILE = Path(__file__).parent / "models.json"
+
 # IP/hostname por el que el movil llega al PC (Tailscale, Radmin, IP de LAN...).
 # Ajusta esto en .env segun la VPN/red que uses.
 DOWNLOAD_HOST = os.environ.get("DOWNLOAD_HOST", "localhost")
@@ -68,7 +76,23 @@ def save_sessions(sessions: dict[str, str]) -> None:
     SESSIONS_FILE.write_text(json.dumps(sessions, indent=2), encoding="utf-8")
 
 
+def load_models() -> dict[str, dict[str, str]]:
+    if MODELS_FILE.exists():
+        return json.loads(MODELS_FILE.read_text(encoding="utf-8"))
+    return {}
+
+
+def save_models(models: dict[str, dict[str, str]]) -> None:
+    MODELS_FILE.write_text(json.dumps(models, indent=2), encoding="utf-8")
+
+
 sessions = load_sessions()
+models = load_models()
+
+
+def get_model_config(chat_id: int) -> tuple[str, str]:
+    config = models.get(str(chat_id), {})
+    return config.get("model", DEFAULT_MODEL), config.get("effort", DEFAULT_EFFORT)
 
 
 class ActivityState:
@@ -214,6 +238,9 @@ async def run_claude(chat_id: int, prompt: str, activity: ActivityState) -> str:
         session_id = str(uuid.uuid4())
         session_args = ["--session-id", session_id]
 
+    model, effort = get_model_config(chat_id)
+    model_args = ["--model", model, "--effort", effort]
+
     # En Windows "claude" es un shim .cmd de npm: CreateProcess no puede
     # ejecutarlo directamente, hay que pasar por cmd.exe. El prompt se
     # manda por stdin (no como argumento) para que el texto del usuario
@@ -222,7 +249,7 @@ async def run_claude(chat_id: int, prompt: str, activity: ActivityState) -> str:
     # mientras trabaja, en vez de esperar a ciegas hasta que termine.
     proc = await asyncio.create_subprocess_exec(
         "cmd", "/c", "claude", "-p", "--dangerously-skip-permissions",
-        "--output-format", "stream-json", "--verbose", *session_args,
+        "--output-format", "stream-json", "--verbose", *session_args, *model_args,
         cwd=PROJECT_PATH,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -449,6 +476,42 @@ async def handle_build(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await message.reply_text(final_text[chunk_start:chunk_start + 4000])
 
 
+async def handle_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or user.id not in ALLOWED_USER_IDS:
+        return
+
+    chat_id = update.effective_chat.id
+    args = context.args or []
+
+    if not args:
+        model, effort = get_model_config(chat_id)
+        await message.reply_text(
+            f"Modelo actual: {model} (effort: {effort})\n\n"
+            "Uso: /model <modelo> [effort]\n"
+            "Ejemplos: /model sonnet | /model opus high | /model reset\n"
+            f"Effort valido: {', '.join(sorted(VALID_EFFORTS))}"
+        )
+        return
+
+    if args[0].lower() == "reset":
+        models.pop(str(chat_id), None)
+        save_models(models)
+        await message.reply_text(f"Restablecido a los valores por defecto: {DEFAULT_MODEL} (effort: {DEFAULT_EFFORT})")
+        return
+
+    model = args[0]
+    effort = args[1].lower() if len(args) > 1 else get_model_config(chat_id)[1]
+    if effort not in VALID_EFFORTS:
+        await message.reply_text(f"Effort invalido. Usa uno de: {', '.join(sorted(VALID_EFFORTS))}")
+        return
+
+    models[str(chat_id)] = {"model": model, "effort": effort}
+    save_models(models)
+    await message.reply_text(f"Modelo actualizado: {model} (effort: {effort})")
+
+
 async def handle_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if user is None or user.id not in ALLOWED_USER_IDS:
@@ -467,6 +530,7 @@ def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("cancel", handle_cancel))
     app.add_handler(CommandHandler("build", handle_build))
+    app.add_handler(CommandHandler("model", handle_model))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     log.info("Bot arrancado, escuchando mensajes de user_ids=%s sobre %s", ALLOWED_USER_IDS, PROJECT_PATH)
     app.run_polling()
