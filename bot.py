@@ -59,6 +59,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("bot")
 
+def _platform_command(*args: str) -> list[str]:
+    """En Windows los ejecutables de npm (claude, flutter) son shims .cmd que
+    CreateProcess no puede lanzar directamente, hay que pasar por cmd.exe. En
+    Linux/macOS el binario se ejecuta directamente sin shell de por medio."""
+    if os.name == "nt":
+        return ["cmd", "/c", *args]
+    return list(args)
+
+
 lock = asyncio.Lock()
 
 # Solo hay una ejecucion de Claude a la vez (protegida por `lock`), asi que
@@ -241,15 +250,16 @@ async def run_claude(chat_id: int, prompt: str, activity: ActivityState) -> str:
     model, effort = get_model_config(chat_id)
     model_args = ["--model", model, "--effort", effort]
 
-    # En Windows "claude" es un shim .cmd de npm: CreateProcess no puede
-    # ejecutarlo directamente, hay que pasar por cmd.exe. El prompt se
-    # manda por stdin (no como argumento) para que el texto del usuario
-    # nunca forme parte de la linea de comandos que cmd.exe interpreta.
-    # stream-json permite ir leyendo que herramienta esta usando Claude
-    # mientras trabaja, en vez de esperar a ciegas hasta que termine.
+    # El prompt se manda por stdin (no como argumento) para que el texto del
+    # usuario nunca forme parte de la linea de comandos que interpreta el
+    # shell en Windows. stream-json permite ir leyendo que herramienta esta
+    # usando Claude mientras trabaja, en vez de esperar a ciegas hasta que
+    # termine.
     proc = await asyncio.create_subprocess_exec(
-        "cmd", "/c", "claude", "-p", "--dangerously-skip-permissions",
-        "--output-format", "stream-json", "--verbose", *session_args, *model_args,
+        *_platform_command(
+            "claude", "-p", "--dangerously-skip-permissions",
+            "--output-format", "stream-json", "--verbose", *session_args, *model_args,
+        ),
         cwd=PROJECT_PATH,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -341,7 +351,7 @@ async def run_flutter_build() -> tuple[bool, str, str | None]:
     global current_proc
 
     proc = await asyncio.create_subprocess_exec(
-        "cmd", "/c", "flutter", "build", "apk", "--release",
+        *_platform_command("flutter", "build", "apk", "--release"),
         cwd=PROJECT_PATH,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
