@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "set -a; . \"${PROJECT_PATH}/claude-code-telegram-bot/.env\" 2>/dev/null; set +a; curl -s -X POST \"https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage\" --data-urlencode \"chat_id=8804857163\" --data-urlencode \"text=Claude Code finished a task in: $(pwd)\" >/dev/null 2>&1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}
